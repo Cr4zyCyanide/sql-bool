@@ -16,10 +16,11 @@ show_payload = False
 
 
 def main():
-    sqli = BooleanInjector(url=url, use_cookie=False, show_payload=True)
+    sqli = BooleanInjector(url=url, use_cookie=False, show_payload=False)
     sqli.get_db_length()
     sqli.get_db_name()
     sqli.get_tables()
+    sqli.get_columns()
 
 
 if __name__ == '__main__':
