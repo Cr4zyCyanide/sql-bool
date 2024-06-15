@@ -275,7 +275,7 @@ class BooleanInjector:
             print(fatal)
 
     # @restrict_values(self.tables)
-    def get_columns(self, witch_table: str = "all"):
+    def get_columns(self):
         for point in self.injectable_params:
             # get column count
             for table in self.tables:
