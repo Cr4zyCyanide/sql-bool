@@ -2,13 +2,13 @@ from bool_injector import *
 
 # 带有正常回显的url
 # iwebsec
-# url = "http://192.168.50.62/sqli/03.php?id=1"
+url = "http://192.168.50.62/sqli/02.php?id=1"
 
 # dvwa
 # url = "http://192.168.50.145/dvwa/vulnerabilities/sqli_blind/?id=1&Submit=Submit#"
 
 # pikachu
-url = "http://192.168.50.145/pikachu/vul/sqli/sqli_blind_b.php?name=kobe&submit=%E6%9F%A5%E8%AF%A2"
+# url = "http://192.168.50.145/pikachu/vul/sqli/sqli_blind_b.php?name=kobe&submit=%E6%9F%A5%E8%AF%A2"
 
 # for dvwa
 # login_url = 'http://192.168.50.145/dvwa/login.php'
@@ -16,7 +16,7 @@ url = "http://192.168.50.145/pikachu/vul/sqli/sqli_blind_b.php?name=kobe&submit=
 # password = 'password'
 
 cookie = {
-    'PHPSESSID': 'kcogmnjqsqnobiqlb3vjdbtj08',
+    'PHPSESSID': '0kuh11ktaee90u1fc50g2ktqev',
     'security': 'low'
 }
 

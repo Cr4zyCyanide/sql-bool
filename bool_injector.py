@@ -244,7 +244,7 @@ class BooleanInjector:
                 if self.get_payload_result(payload, point):
                     print(get_time(), info, colored(f"Got table count:", "light_green"),
                           colored(f"{count} ", "light_yellow"),
-                          end=f" by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}\n"
+                          end=f"by using payload:\n{colored(self.construct_payload(payload, point), "cyan")}\n"
                           if self.show_payload else "\n")
                     table_count = count
                     break
